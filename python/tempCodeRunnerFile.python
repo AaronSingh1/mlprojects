@@ -1,0 +1,62 @@
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense
+import matplotlib.pyplot as plt
+
+# Load the historical stock data
+data = pd.read_csv('TSLA.csv')  # Replace 'stock_data.csv' with your actual dataset file
+
+# Extract the relevant column (e.g., 'Close') as the target variable
+y = data['Close'].values.reshape(-1, 1)
+
+# Scale the target variable to a specific range (e.g., 0 to 1)
+scaler = MinMaxScaler()
+y_scaled = scaler.fit_transform(y)
+
+# Split the data into training and testing sets
+train_size = int(len(y_scaled) * 0.8)
+train_data = y_scaled[:train_size]
+test_data = y_scaled[train_size:]
+
+# Prepare the data for LSTM training
+def create_lstm_dataset(dataset, lookback):
+    X, y = [], []
+    for i in range(len(dataset) - lookback):
+        X.append(dataset[i:i + lookback])
+        y.append(dataset[i + lookback])
+    return np.array(X), np.array(y)
+
+lookback = 30  # Number of previous time steps to consider
+X_train, y_train = create_lstm_dataset(train_data, lookback)
+X_test, y_test = create_lstm_dataset(test_data, lookback)
+
+# Create the LSTM model
+model = Sequential()
+model.add(LSTM(units=50, return_sequences=True, input_shape=(lookback, 1)))
+model.add(LSTM(units=50))
+model.add(Dense(units=1))
+model.compile(optimizer='adam', loss='mean_squared_error')
+
+# Train the LSTM model
+model.fit(X_train, y_train, epochs=50, batch_size=32)
+
+# Predict future values
+future_data = test_data[-lookback:].reshape(1, lookback, 1)
+future_predictions = []
+for _ in range(365):
+    prediction = model.predict(future_data)
+    future_predictions.append(prediction)
+    future_data = np.append(future_data[:, 1:, :], prediction.reshape(1, 1, 1), axis=1)
+
+# Inverse scale the predictions
+future_predictions = scaler.inverse_transform(np.array(future_predictions).reshape(-1, 1))
+
+# Plot the predicted future values
+plt.plot(data['Date'].tail(365), future_predictions, label='Predicted')
+plt.xlabel('Date')
+plt.ylabel('Stock Price')
+plt.title('Stock Price Prediction for the Next Year')
+plt.legend()
+plt.show()
